@@ -3,7 +3,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.SqlClient;
-using System.Linq;
 using Windows.ApplicationModel.Core;
 using Windows.UI;
 using Windows.UI.Popups;
@@ -109,7 +108,7 @@ namespace XamlBrewer.Uwp.DataGridSample
             var query = @"
                 SELECT TOP 15
                     SUM(query_stats.total_worker_time) / SUM(query_stats.execution_count) AS 'Avg CPU Time',
-                    SUBSTRING(MIN(query_stats.statement_text), 0, 120) + '...' AS 'SQL Statement',
+                    MIN(query_stats.statement_text) AS 'SQL Statement',
                     MIN(query_stats.statement_text) AS 'Full SQL Statement'
                 FROM
                     (SELECT QS.*,
@@ -126,54 +125,69 @@ namespace XamlBrewer.Uwp.DataGridSample
             ExecuteQuery(query);
         }
 
-        private void ExecuteQuery(string query)
+        private async void ExecuteQuery(string query)
         {
             using (var connection = new SqlConnection(connectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
                 var command = connection.CreateCommand();
                 command.CommandText = query;
-                var dataSet = new DataSet();
+                dataTable = new DataTable();
 
                 using (var dataAdapter = new SqlDataAdapter(command))
                 {
-                    dataAdapter.Fill(dataSet);
+                    dataAdapter.Fill(dataTable);
                 }
+            }
 
-                dataTable = dataSet.Tables[0];
+            BindTable(dataTable, ResultsGrid);
 
-                BindTable(dataTable, ResultsGrid);
-
-                if (dataTable.Rows.Count == 0)
-                {
-                    ResultsGrid.Visibility = Visibility.Collapsed;
-                }
-                else
-                {
-                    ResultsGrid.Visibility = Visibility.Visible;
-                }
+            if (dataTable.Rows.Count == 0)
+            {
+                ResultsGrid.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                ResultsGrid.Visibility = Visibility.Visible;
             }
         }
 
         private void BindTable(DataTable table, DataGrid grid)
         {
             // Generate columns with index binding
+
             grid.Columns.Clear();
+            grid.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.Collapsed;
 
-            var max = table.Columns.Count;
-
-            if (table.Columns[table.Columns.Count-1].ColumnName == "Full SQL Statement")
+            for (int i = 0; i < table.Columns.Count; i++)
             {
-                max -= 1;
+                if (table.Columns[i].ColumnName == "Full SQL Statement")
+                {
+                    // Treat 'Full SQL Statement' column differently.
+                    grid.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
+                }
+                else
+                {
+                    grid.Columns.Add(new DataGridTextColumn()
+                    {
+                        Header = table.Columns[i].ColumnName,
+                        Binding = new Binding { Path = new PropertyPath("[" + i.ToString() + "]") }
+                    });
+                }
             }
 
-            for (int i = 0; i <max; i++)
+            // Post-process 'SQL Statement' column.
+            if (table.Columns.Contains("SQL Statement"))
             {
-                grid.Columns.Add(new DataGridTextColumn()
+                var column = table.Columns["SQL Statement"];
+
+                foreach (DataRow row in table.Rows)
                 {
-                    Header = table.Columns[i].ColumnName,
-                    Binding = new Binding { Path = new PropertyPath("[" + i.ToString() + "]") }
-                });
+                    string sqlStatement = ((row[column] as string) ?? string.Empty).Trim();
+                    row[column] = string.Join(' ', sqlStatement.Split(default(string[]), StringSplitOptions.RemoveEmptyEntries)).Substring(0, 80) + "...";
+                }
+
+                table.AcceptChanges();
             }
 
             RefreshContents(table, grid);
