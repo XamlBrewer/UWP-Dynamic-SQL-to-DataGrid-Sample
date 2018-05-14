@@ -47,7 +47,7 @@
                    Margin="0 20 20 20"
                    Grid.Column="1"
                    FontFamily="Segoe UI">
-            <Run>UWP DataTable to DataGrid Sample</Run>
+            <Run>UWP Dynamic SQL to DataGrid Sample</Run>
         </TextBlock>
 
         <!-- Buttons -->
